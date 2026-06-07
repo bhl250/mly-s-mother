@@ -27,6 +27,8 @@ install_apt_packages() {
 
   run_root apt-get update
   run_root env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    python3-venv \
+    python3-pip \
     tshark \
     wireshark-common \
     libpcap-dev

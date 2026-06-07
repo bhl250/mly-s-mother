@@ -25,6 +25,11 @@ bash scripts/install_cli_deps.sh
 - `tshark`
 - `mergecap`
 
+同时也会安装创建项目虚拟环境需要的系统包：
+
+- `python3-venv`
+- `python3-pip`
+
 它们来自 Ubuntu/Debian 的 Wireshark 命令行包，不是 Windows `.exe`。脚本会把系统命令软链接到项目目录：
 
 ```bash
@@ -56,6 +61,25 @@ source env.sh
 
 ```bash
 bash scripts/setup_python_env.sh
+```
+
+如果这里报 `ensurepip is not available`，说明服务器缺 Python venv 系统包。先执行：
+
+```bash
+bash scripts/install_cli_deps.sh
+```
+
+或者手动安装：
+
+```bash
+apt-get update
+apt-get install -y python3-venv python3-pip
+```
+
+如果服务器提示类似 `apt install python3.10-venv`，就安装它提示的版本包：
+
+```bash
+apt-get install -y python3.10-venv
 ```
 
 这个脚本会在项目根目录创建：

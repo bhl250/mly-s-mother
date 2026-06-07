@@ -10,7 +10,30 @@ if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
   exit 1
 fi
 
-"$PYTHON_BIN" -m venv "$VENV_DIR"
+if ! "$PYTHON_BIN" -m venv "$VENV_DIR"; then
+  cat >&2 <<EOF
+Failed to create the Python virtual environment.
+
+On Debian/Ubuntu servers this usually means the python venv package is missing.
+Install system dependencies first:
+
+  bash scripts/install_cli_deps.sh
+
+Or install the matching venv package manually, for example:
+
+  apt-get update
+  apt-get install -y python3-venv python3-pip
+
+If your server uses a version-specific package, install the one matching:
+
+  $PYTHON_BIN --version
+
+For example:
+
+  apt-get install -y python3.10-venv
+EOF
+  exit 1
+fi
 
 "$VENV_DIR/bin/python" -m pip install --upgrade pip setuptools wheel
 "$VENV_DIR/bin/python" -m pip install -r "$PROJECT_ROOT/requirements.txt"
