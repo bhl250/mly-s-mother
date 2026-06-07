@@ -200,6 +200,14 @@ requirements-optional.txt
 
 说明：`pcap-splitter` 是可选加速/兼容依赖。它内部还会尝试调用 `PcapSplitter` 二进制；如果不可用，代码会自动 fallback 到 Scapy 做切分。
 
+如果运行时看到类似：
+
+```text
+PcapSplitter executable is not installed or not in PATH
+```
+
+这不是致命错误。`PcapSplitter` 是 PcapPlusPlus 提供的外部二进制，不是本项目必须依赖。代码会先检查系统 `PATH`，找不到时直接走 Scapy fallback。fallback 写出 Scapy `Raw` 包时会使用 Ethernet linktype，避免 `KeyError: <class 'scapy.packet.Raw'>` 中断。
+
 ## 4. 预训练数据处理
 
 主脚本：
@@ -246,6 +254,7 @@ python data_process/dataset_generation.py pretrain \
 | `--word-dir` | 可选 | 环境变量 `WORD_DIR`，否则 `./corpora` | 最终预训练 BURST 文本语料输出目录。 |
 | `--word-name` | 可选 | 环境变量 `WORD_NAME`，否则 `encrypted_burst.txt` | 最终预训练 BURST 文本语料文件名。 |
 | `--payload-len` | 可选 | `64` | 提取 BURST 特征时截取的 payload 长度。 |
+| `--force` | 可选 | 默认不开启 | 删除已有 `splitcap/` 和预训练语料文件后重跑，适合上一次运行中断后使用。 |
 
 最小命令只需要传输入数据路径：
 
@@ -260,6 +269,19 @@ python data_process/dataset_generation.py pretrain \
 ./dataset/
 ./dataset/pcap/
 ./corpora/encrypted_burst.txt
+```
+
+如果上一次运行中断，输出目录里可能已经留下半成品 `splitcap/` 或旧的 `encrypted_burst.txt`。重跑时加 `--force`：
+
+```bash
+python data_process/dataset_generation.py pretrain \
+  --pcap-path /data/pretrain/raw_pcaps \
+  --output-split-path /data/pretrain/work \
+  --pcap-output-path /data/pretrain/work/pcap \
+  --word-dir /data/pretrain/corpora \
+  --word-name encrypted_burst.txt \
+  --payload-len 64 \
+  --force
 ```
 
 主要输出：
@@ -340,6 +362,7 @@ python data_process/dataset_generation.py split-finetune \
 | --- | --- | --- | --- |
 | `--pcap-path` | 必填 | 可用环境变量 `PCAP_PATH` 提供 | 原始有标签 PCAP 根目录，要求结构是 `PCAP_PATH/<label>/*.pcap`。这是输入数据路径，必须明确指定。 |
 | `--dataset-level` | 可选 | `packet` | `packet` 表示每个切分样本是一包；`flow` 表示每个切分样本是一个 session/flow。 |
+| `--force` | 可选 | 默认不开启 | 删除已有 `PCAP_PATH/splitcap/` 后重跑，适合上一次切分中断后使用。 |
 
 最小命令：
 
@@ -349,6 +372,15 @@ python data_process/dataset_generation.py split-finetune \
 ```
 
 不传 `--dataset-level` 时默认按 `packet` 切分。
+
+如果上一次切分中断，重跑时加 `--force`：
+
+```bash
+python data_process/dataset_generation.py split-finetune \
+  --pcap-path /data/finetune/raw_pcaps \
+  --dataset-level packet \
+  --force
+```
 
 主要输出：
 

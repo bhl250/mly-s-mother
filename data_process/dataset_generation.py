@@ -70,8 +70,18 @@ def _rdpcap(path):
     return rdpcap(path)
 
 def _wrpcap(path, packets):
-    from scapy.utils import wrpcap
-    return wrpcap(path, packets)
+    from scapy.utils import PcapWriter, wrpcap
+    try:
+        return wrpcap(path, packets)
+    except KeyError as exc:
+        LOGGER.warning("Scapy could not infer pcap linktype for %s (%s); writing raw bytes with Ethernet linktype.", path, exc)
+        writer = PcapWriter(path, linktype=1, sync=True)
+        try:
+            for packet in packets:
+                sec = getattr(packet, "time", None)
+                writer.write_packet(bytes(packet), sec=sec)
+        finally:
+            writer.close()
 
 def _packet_session_key(packet, fallback_index):
     ip_layer = packet.getlayer("IP") or packet.getlayer("IPv6")
@@ -126,6 +136,8 @@ def split_cap(pcap_path, pcap_file, pcap_name, pcap_label='', dataset_level = 'f
     try:
         if PcapSplitter is None:
             raise RuntimeError("pcap-splitter is not installed")
+        if shutil.which("PcapSplitter") is None:
+            raise RuntimeError("PcapSplitter executable is not installed or not in PATH")
         splitter = PcapSplitter(pcap_file)
         if dataset_level == 'flow':
             splitter.split_by_session(output_path)
@@ -550,13 +562,22 @@ def combine_dataset_json(dataset_name=None, output_file=None):
         json.dump(dataset, fp=f, ensure_ascii=False, indent=4)
     return 0
 
-def pretrain_dataset_generation(pcap_path, output_split_path=None, pcap_output_path=None, payload_len=64):
+def pretrain_dataset_generation(pcap_path, output_split_path=None, pcap_output_path=None, payload_len=64, force=False):
     if not os.path.isdir(pcap_path):
         raise FileNotFoundError("Input --pcap-path does not exist or is not a directory: %s" % pcap_path)
     output_split_path = output_split_path or os.environ.get("OUTPUT_SPLIT_PATH", os.path.join(os.getcwd(), "dataset"))
     pcap_output_path = pcap_output_path or os.environ.get("PCAP_OUTPUT_PATH", os.path.join(output_split_path, "pcap"))
     os.makedirs(output_split_path, exist_ok=True)
     os.makedirs(pcap_output_path, exist_ok=True)
+    splitcap_path = os.path.join(output_split_path, "splitcap")
+    word_path = os.path.join(word_dir, word_name)
+    if force:
+        if os.path.exists(splitcap_path):
+            LOGGER.info("Force enabled: removing existing splitcap directory: %s", splitcap_path)
+            shutil.rmtree(splitcap_path)
+        if os.path.exists(word_path):
+            LOGGER.info("Force enabled: removing existing pretrain corpus: %s", word_path)
+            os.remove(word_path)
     LOGGER.info("Pretrain started: pcap_path=%s output_split_path=%s pcap_output_path=%s word_dir=%s word_name=%s payload_len=%s",
                 pcap_path, output_split_path, pcap_output_path, word_dir, word_name, payload_len)
     
@@ -582,7 +603,7 @@ def pretrain_dataset_generation(pcap_path, output_split_path=None, pcap_output_p
     else:
         LOGGER.info("Skip normalization because pcap_output_path is not empty: %s", pcap_output_path)
     
-    if not os.path.exists(os.path.join(output_split_path, "splitcap")):
+    if not os.path.exists(splitcap_path):
         split_inputs = [
             os.path.join(parent, file)
             for parent, dirs, files in os.walk(pcap_output_path)
@@ -592,13 +613,13 @@ def pretrain_dataset_generation(pcap_path, output_split_path=None, pcap_output_p
         LOGGER.info("Split pretrain pcaps as session flows: total=%d", len(split_inputs))
         for file_path in tqdm.tqdm(split_inputs, desc="split-pretrain"):
             split_cap(output_split_path, file_path, os.path.basename(file_path))
-        LOGGER.info("Split pretrain pcaps finished: total=%d output=%s", len(split_inputs), os.path.join(output_split_path, "splitcap"))
+        LOGGER.info("Split pretrain pcaps finished: total=%d output=%s", len(split_inputs), splitcap_path)
     else:
-        LOGGER.info("Skip splitting because splitcap directory already exists: %s", os.path.join(output_split_path, "splitcap"))
+        LOGGER.info("Skip splitting because splitcap directory already exists: %s", splitcap_path)
 
     burst_inputs = [
         os.path.join(parent, file)
-        for parent, dirs, files in os.walk(os.path.join(output_split_path, "splitcap"))
+        for parent, dirs, files in os.walk(splitcap_path)
         for file in files
         if file.endswith(".pcap")
     ]
@@ -608,13 +629,17 @@ def pretrain_dataset_generation(pcap_path, output_split_path=None, pcap_output_p
     LOGGER.info("Pretrain finished: burst_inputs=%d output_file=%s", len(burst_inputs), os.path.join(word_dir, word_name))
     return 0
 
-def split_finetune_pcaps(pcap_path, dataset_level='packet'):
+def split_finetune_pcaps(pcap_path, dataset_level='packet', force=False):
     if not os.path.isdir(pcap_path):
         raise FileNotFoundError("Input --pcap-path does not exist or is not a directory: %s" % pcap_path)
     labels = [
         label for label in os.listdir(pcap_path)
         if os.path.isdir(os.path.join(pcap_path, label)) and label != "splitcap"
     ]
+    splitcap_path = os.path.join(pcap_path, "splitcap")
+    if force and os.path.exists(splitcap_path):
+        LOGGER.info("Force enabled: removing existing splitcap directory: %s", splitcap_path)
+        shutil.rmtree(splitcap_path)
     LOGGER.info("Fine-tune split started: pcap_path=%s dataset_level=%s labels=%d", pcap_path, dataset_level, len(labels))
     total_files = 0
     total_converted = 0
@@ -643,8 +668,8 @@ def split_finetune_pcaps(pcap_path, dataset_level='packet'):
                 total_files += 1
         LOGGER.info("Split label finished: label=%s files=%d", label, len(label_files))
     LOGGER.info("Fine-tune split finished: labels=%d files=%d converted_pcapng=%d output=%s",
-                len(labels), total_files, total_converted, os.path.join(pcap_path, "splitcap"))
-    return os.path.join(pcap_path, "splitcap")
+                len(labels), total_files, total_converted, splitcap_path)
+    return splitcap_path
 
 def size_format(size):
     # 'KB'
@@ -680,6 +705,8 @@ def _build_arg_parser():
                                  help="Log file path. Defaults to ./logs/pretrain.log.")
     pretrain_parser.add_argument("--log-level", default=os.environ.get("LOG_LEVEL", "INFO"),
                                  help="Logging level.")
+    pretrain_parser.add_argument("--force", action="store_true",
+                                 help="Remove existing splitcap output and pretrain corpus before running.")
 
     split_parser = subparsers.add_parser(
         "split-finetune",
@@ -694,6 +721,8 @@ def _build_arg_parser():
                               help="Log file path. Defaults to ./logs/finetune_split.log.")
     split_parser.add_argument("--log-level", default=os.environ.get("LOG_LEVEL", "INFO"),
                               help="Logging level.")
+    split_parser.add_argument("--force", action="store_true",
+                              help="Remove existing splitcap output before running.")
 
     return parser
 
@@ -709,7 +738,8 @@ if __name__ == '__main__':
             output_split_path=args.output_split_path,
             pcap_output_path=getattr(args, "pcap_output_path", None),
             payload_len=args.payload_len,
+            force=args.force,
         )
     elif args.command == "split-finetune":
-        output_path = split_finetune_pcaps(args.pcap_path, dataset_level=args.dataset_level)
+        output_path = split_finetune_pcaps(args.pcap_path, dataset_level=args.dataset_level, force=args.force)
         print("Fine-tuning split pcaps saved to: %s" % output_path)
