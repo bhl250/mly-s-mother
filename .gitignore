@@ -1,0 +1,41 @@
+# Local Python virtual environments
+.venv/
+venv/
+env/
+
+# Python cache/build outputs
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+
+# Local generated activation/PATH files
+activate_project_env.sh
+env.sh
+
+# Runtime logs
+logs/
+
+# Project-local symlinks to system CLI tools
+bin/
+
+# Generated preprocessing outputs
+corpora/
+dataset/
+datasets/
+ex_results/
+traffic_pcap/
+cstnet-tls1.3/
+pcaps/
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
