@@ -534,7 +534,109 @@ python data_process/main.py \
 python data_process/main.py --help
 ```
 
-## 6. 推荐完整服务器运行流程
+## 6. 后台运行和断开 SSH
+
+长时间处理服务器数据时，建议不要直接在 SSH 前台运行。项目提供了 detached 启动脚本：
+
+```bash
+bash scripts/run_detached.sh --name RUN_NAME -- COMMAND [ARGS...]
+```
+
+它会把命令交给 `nohup` 后台运行。即使 SSH 断开，进程也会继续执行。
+
+默认输出目录：
+
+```text
+runs/
+```
+
+每个后台任务会生成：
+
+```text
+runs/RUN_NAME.pid
+runs/RUN_NAME.out.log
+runs/RUN_NAME.err.log
+runs/RUN_NAME.command.sh
+```
+
+说明：
+
+- `RUN_NAME.pid`：后台进程 PID。
+- `RUN_NAME.out.log`：标准输出日志，包括 `tqdm` 进度和普通输出。
+- `RUN_NAME.err.log`：标准错误日志，包括异常和 warning。
+- `RUN_NAME.command.sh`：实际执行的命令脚本，便于复查本次运行参数。
+
+后台启动预训练：
+
+```bash
+bash scripts/run_detached.sh --name pretrain -- \
+  python data_process/dataset_generation.py pretrain \
+    --pcap-path /data/pretrain/raw_pcaps \
+    --output-split-path /data/pretrain/work \
+    --pcap-output-path /data/pretrain/work/pcap \
+    --word-dir /data/pretrain/corpora \
+    --word-name encrypted_burst.txt \
+    --payload-len 64 \
+    --log-file /data/logs/pretrain.log \
+    --force
+```
+
+后台启动微调切分：
+
+```bash
+bash scripts/run_detached.sh --name finetune_split -- \
+  python data_process/dataset_generation.py split-finetune \
+    --pcap-path /data/finetune/raw_pcaps \
+    --dataset-level packet \
+    --log-file /data/logs/finetune_split.log \
+    --force
+```
+
+后台启动微调数据集生成：
+
+```bash
+bash scripts/run_detached.sh --name finetune_generate -- \
+  python data_process/main.py \
+    --pcap-path /data/finetune/raw_pcaps/splitcap \
+    --dataset-save-path /data/finetune/result \
+    --dataset-dir /data/finetune/datasets \
+    --samples 5000 \
+    --category 120 \
+    --dataset-level packet \
+    --features payload \
+    --models pre-train \
+    --log-file /data/logs/finetune_generate.log
+```
+
+查看后台任务是否还在运行：
+
+```bash
+PID=$(cat runs/pretrain.pid)
+kill -0 "$PID" && echo running || echo stopped
+```
+
+实时查看 detached 进程输出：
+
+```bash
+tail -f runs/pretrain.out.log
+tail -f runs/pretrain.err.log
+```
+
+实时查看数据处理日志：
+
+```bash
+tail -f /data/logs/pretrain.log
+tail -f /data/logs/finetune_split.log
+tail -f /data/logs/finetune_generate.log
+```
+
+停止后台任务：
+
+```bash
+kill "$(cat runs/pretrain.pid)"
+```
+
+## 7. 推荐完整服务器运行流程
 
 假设服务器上的数据路径如下：
 
@@ -583,7 +685,7 @@ python data_process/main.py \
   --log-file /data/logs/finetune_generate.log
 ```
 
-## 7. 不要写死路径
+## 8. 不要写死路径
 
 不要再改源码里的路径。迁移到不同服务器时，只改命令行参数：
 
@@ -615,7 +717,7 @@ python data_process/main.py \
 
 这些参数如果不通过命令行传，就必须提前设置 `PCAP_PATH`。除此之外的输出目录和处理参数都有默认值。
 
-## 8. Git 追踪规则
+## 9. Git 追踪规则
 
 应该追踪源码、安装脚本、依赖清单和迁移说明：
 
@@ -641,6 +743,7 @@ git add .gitignore \
 - `env.sh`
 - `bin/`
 - `logs/`
+- `runs/`
 - `__pycache__/`
 - `*.pyc`
 - `dataset/`

@@ -20,6 +20,7 @@ env.sh
 
 # Runtime logs
 logs/
+runs/
 
 # Project-local symlinks to system CLI tools
 bin/
