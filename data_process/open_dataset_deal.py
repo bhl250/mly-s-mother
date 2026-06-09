@@ -4,6 +4,9 @@
 import os
 import shutil
 import subprocess
+import re
+
+PCAP_EXTENSIONS = (".pcap", ".pcapng")
 
 def _run_tool(args):
     try:
@@ -51,6 +54,103 @@ def dataset_file2dir(file_path):
             os.mkdir(label_dir)
             shutil.move(os.path.join(parent, file), label_dir)
     return 0
+
+def _pcap_files_under(path):
+    return [
+        os.path.join(parent, file)
+        for parent, dirs, files in os.walk(path)
+        for file in files
+        if file.lower().endswith(PCAP_EXTENSIONS)
+    ]
+
+def is_labeled_pcap_root(path):
+    if not os.path.isdir(path):
+        return False
+    for name in os.listdir(path):
+        label_dir = os.path.join(path, name)
+        if name in ("splitcap", "converted_pcap") or not os.path.isdir(label_dir):
+            continue
+        if _pcap_files_under(label_dir):
+            return True
+    return False
+
+def infer_label_from_filename(file_name):
+    stem = os.path.splitext(os.path.basename(file_name))[0]
+
+    split_suffix = re.search(r"(.+?)[_-](?:packet|flow|session)[_-]?\d+$", stem, re.IGNORECASE)
+    if split_suffix:
+        stem = split_suffix.group(1)
+
+    label_match = re.match(r"^(label[_-]?\d+)(?:[_\-.].*)?$", stem, re.IGNORECASE)
+    if label_match:
+        return label_match.group(1)
+
+    number_match = re.match(r"^(\d+)(?:[_\-.].*)?$", stem)
+    if number_match:
+        return number_match.group(1)
+
+    token_match = re.match(r"^(.+?)(?:[_\-.]\d+|[_\-.](?:packet|flow|session)[_\-.]?\d+|$)", stem, re.IGNORECASE)
+    if token_match:
+        return token_match.group(1).strip("_-.")
+
+    return stem.strip("_-.")
+
+def _unique_target_path(target_dir, file_name):
+    target_file = os.path.join(target_dir, file_name)
+    if not os.path.exists(target_file):
+        return target_file
+
+    stem, ext = os.path.splitext(file_name)
+    count = 1
+    while True:
+        target_file = os.path.join(target_dir, "%s_%d%s" % (stem, count, ext))
+        if not os.path.exists(target_file):
+            return target_file
+        count += 1
+
+def _safe_symlink(source_file, target_file):
+    if os.path.lexists(target_file):
+        if os.path.islink(target_file):
+            existing_target = os.readlink(target_file)
+            if os.path.abspath(os.path.join(os.path.dirname(target_file), existing_target)) == os.path.abspath(source_file):
+                return
+        os.unlink(target_file)
+    os.symlink(source_file, target_file)
+
+def classify_flat_pcap_root(path, output_path=None, copy_files=False):
+    if is_labeled_pcap_root(path):
+        return path, {}
+
+    pcap_files = _pcap_files_under(path)
+    if not pcap_files:
+        return path, {}
+
+    source_parent = os.path.dirname(os.path.abspath(path))
+    source_name = os.path.basename(os.path.abspath(path))
+    output_path = output_path or os.path.join(source_parent, "%s_classified" % source_name)
+    os.makedirs(output_path, exist_ok=True)
+
+    label_counts = {}
+    target_paths = set()
+    for source_file in pcap_files:
+        if os.path.abspath(source_file).startswith(os.path.abspath(output_path) + os.sep):
+            continue
+        label = infer_label_from_filename(source_file)
+        if not label:
+            continue
+        target_dir = os.path.join(output_path, label)
+        os.makedirs(target_dir, exist_ok=True)
+        target_file = os.path.join(target_dir, os.path.basename(source_file))
+        if target_file in target_paths:
+            target_file = _unique_target_path(target_dir, os.path.basename(source_file))
+        target_paths.add(target_file)
+        if copy_files:
+            shutil.copy2(source_file, target_file)
+        else:
+            _safe_symlink(source_file, target_file)
+        label_counts[label] = label_counts.get(label, 0) + 1
+
+    return output_path, label_counts
 
 def file_2_pcap(source_file,target_file):
     _run_tool(["tshark", "-F", "pcap", "-r", source_file, "-w", target_file])

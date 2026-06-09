@@ -300,6 +300,12 @@ if __name__ == '__main__':
     if file2dir:
         open_dataset_deal.dataset_file2dir(pcap_path)
 
+    classified_path, label_counts = open_dataset_deal.classify_flat_pcap_root(pcap_path)
+    if classified_path != pcap_path:
+        LOGGER.info("Input pcap root was classified by file name: source=%s classified=%s labels=%d files=%d counts=%s",
+                    pcap_path, classified_path, len(label_counts), sum(label_counts.values()), label_counts)
+        pcap_path = classified_path
+
     splitcap_finish = args.splitcap_finish
     if splitcap_finish:
         samples = count_label_number(samples)

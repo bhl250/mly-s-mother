@@ -326,6 +326,24 @@ python data_process/dataset_generation.py pretrain --help
 
 目录名就是类别名。脚本会根据这些类别目录建立 label id。
 
+如果输入目录不是上面的结构，而是把 PCAP/PCAPNG 文件直接放在同一个目录里，微调脚本会先按文件名识别类别，并在输入目录的同级位置新建一个分类后的目录：
+
+```text
+/data/finetune/raw_pcaps/
+  label_0_a.pcap
+  label_0_b.pcapng
+  label_1_c.pcap
+
+/data/finetune/raw_pcaps_classified/
+  label_0/
+    label_0_a.pcap
+    label_0_b.pcapng
+  label_1/
+    label_1_c.pcap
+```
+
+之后脚本会自动改用新建的 `*_classified` 目录继续处理。原始输入目录不会被移动或删除。新目录里放的是指向原始文件的软链接，不会再复制一整份数据到磁盘上。文件名识别规则优先支持 `label_0_xxx.pcap`、`label-0-xxx.pcap`、`0_xxx.pcap` 这类名字；其他名字默认取文件名前面的类别部分。
+
 ### 5.2 第一步：切分微调 PCAP
 
 主脚本：
@@ -360,7 +378,7 @@ python data_process/dataset_generation.py split-finetune \
 
 | 参数 | 是否必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `--pcap-path` | 必填 | 可用环境变量 `PCAP_PATH` 提供 | 原始有标签 PCAP 根目录，要求结构是 `PCAP_PATH/<label>/*.pcap`。这是输入数据路径，必须明确指定。 |
+| `--pcap-path` | 必填 | 可用环境变量 `PCAP_PATH` 提供 | 原始有标签 PCAP 根目录，推荐结构是 `PCAP_PATH/<label>/*.pcap`。如果目录下是平铺文件，脚本会按文件名分类到同级 `*_classified` 目录后继续处理。 |
 | `--dataset-level` | 可选 | `packet` | `packet` 表示每个切分样本是一包；`flow` 表示每个切分样本是一个 session/flow。 |
 | `--force` | 可选 | 默认不开启 | 删除已有 `PCAP_PATH/splitcap/` 后重跑，适合上一次切分中断后使用。 |
 
@@ -446,7 +464,7 @@ python data_process/main.py \
 
 | 参数 | 是否必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `--pcap-path` | 必填 | 可用环境变量 `PCAP_PATH` 提供 | 切分后的 PCAP 根目录，一般是上一步生成的 `.../splitcap`。这是输入数据路径，必须明确指定。 |
+| `--pcap-path` | 必填 | 可用环境变量 `PCAP_PATH` 提供 | 切分后的 PCAP 根目录，一般是上一步生成的 `.../splitcap`。如果目录下是平铺文件，脚本会按文件名分类到同级 `*_classified` 目录后继续处理。 |
 | `--dataset-save-path` | 可选 | 环境变量 `DATASET_SAVE_PATH`，否则 `./finetune_result` | 保存 `dataset.json`、`picked_file_record` 和 `.npy` 缓存的目录。 |
 | `--dataset-dir` | 可选 | 环境变量 `DATASET_DIR`，否则 `./datasets` | 保存最终 TSV 文件的目录。 |
 | `--samples` | 可选 | `5000` | 每个类别抽样数量。 |

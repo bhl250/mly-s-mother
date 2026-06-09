@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 from functools import reduce
 from flowcontainer.extractor import extract
+import open_dataset_deal
 
 try:
     from pcap_splitter.splitter import PcapSplitter
@@ -632,6 +633,11 @@ def pretrain_dataset_generation(pcap_path, output_split_path=None, pcap_output_p
 def split_finetune_pcaps(pcap_path, dataset_level='packet', force=False):
     if not os.path.isdir(pcap_path):
         raise FileNotFoundError("Input --pcap-path does not exist or is not a directory: %s" % pcap_path)
+    classified_path, label_counts = open_dataset_deal.classify_flat_pcap_root(pcap_path)
+    if classified_path != pcap_path:
+        LOGGER.info("Input pcap root was classified by file name: source=%s classified=%s labels=%d files=%d",
+                    pcap_path, classified_path, len(label_counts), sum(label_counts.values()))
+        pcap_path = classified_path
     labels = [
         label for label in os.listdir(pcap_path)
         if os.path.isdir(os.path.join(pcap_path, label)) and label != "splitcap"
